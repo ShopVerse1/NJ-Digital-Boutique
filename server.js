@@ -1,9 +1,4 @@
 const express = require('express');
-const path = require('path');
-require('dotenv').config();
-
-const app = express();});
-const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -13,11 +8,30 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Try multiple paths for frontend files
+const frontendPaths = [
+  path.join(__dirname, '../frontend'),
+  path.join(__dirname, 'public'),
+  path.join(__dirname, '../public'),
+  path.join(__dirname, 'dist')
+];
+
+// Serve static files from the first available path
+let frontendServed = false;
+frontendPaths.forEach(frontendPath => {
+  if (require('fs').existsSync(frontendPath)) {
+    app.use(express.static(frontendPath));
+    console.log(`✅ Serving frontend from: ${frontendPath}`);
+    frontendServed = true;
+  }
+});
+
+if (!frontendServed) {
+  console.log('⚠️  Frontend files not found - API only mode');
+}
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nj_digital_boutique';
@@ -28,41 +42,39 @@ mongoose.connect(MONGODB_URI, {
 .then(() => console.log('✅ Connected to MongoDB'))
 .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// Import and use routes
+// API Routes
 app.use('/api/products', require('./routes/products'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/newsletter', require('./routes/newsletter'));
 app.use('/api/auth', require('./routes/auth'));
 
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', message: 'NJ Digital Boutique API is running' });
+});
+
 // Serve frontend for all other routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  // Try to serve frontend, fallback to API message
+  frontendPaths.forEach(frontendPath => {
+    const indexFile = path.join(frontendPath, 'index.html');
+    if (require('fs').existsSync(indexFile)) {
+      return res.sendFile(indexFile);
+    }
+  });
+  
+  // If no frontend found, show API info
+  res.json({ 
+    message: 'NJ Digital Boutique API', 
+    frontend: 'Frontend files not found - running in API mode',
+    endpoints: ['/api/products', '/api/orders', '/api/auth']
+  });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-});
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'));
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 Frontend served from: ${path.join(__dirname, '../frontend')}`);
-  console.log(`🔗 API available at: http://localhost:${PORT}/api`);
-  console.log(`👤 Auth routes: http://localhost:${PORT}/api/auth`);
+  console.log(`🔗 API: http://localhost:${PORT}/api`);
+  console.log(`🌐 Frontend: http://localhost:${PORT}`);
 });
